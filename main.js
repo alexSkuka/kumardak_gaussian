@@ -290,6 +290,73 @@ function translate4(a, x, y, z) {
     ];
 }
 
+// Pre-multiply rotation in world space: orientation changes around world axis, position stays fixed
+function rotateWorld4(a, rad, x, y, z) {
+    let len = Math.hypot(x, y, z);
+    if (!len) return a.slice();
+    x /= len; y /= len; z /= len;
+    let s = Math.sin(rad);
+    let c = Math.cos(rad);
+    let t = 1 - c;
+    let r00 = x * x * t + c;
+    let r01 = y * x * t + z * s;
+    let r02 = z * x * t - y * s;
+    let r10 = x * y * t - z * s;
+    let r11 = y * y * t + c;
+    let r12 = z * y * t + x * s;
+    let r20 = x * z * t + y * s;
+    let r21 = y * z * t - x * s;
+    let r22 = z * z * t + c;
+
+    const out = a.slice();
+    // Apply to columns 0..2 (orientation), leave translation column intact
+    for (let j = 0; j < 3; j++) {
+        const i = j * 4;
+        const c0 = a[i + 0], c1 = a[i + 1], c2 = a[i + 2];
+        out[i + 0] = r00 * c0 + r01 * c1 + r02 * c2;
+        out[i + 1] = r10 * c0 + r11 * c1 + r12 * c2;
+        out[i + 2] = r20 * c0 + r21 * c1 + r22 * c2;
+        // out[i + 3] stays the same (should be 0 for orientation columns)
+    }
+    return out;
+}
+
+function _normalize3(x, y, z) {
+    const l = Math.hypot(x, y, z) || 1;
+    return [x / l, y / l, z / l];
+}
+function _cross3(ax, ay, az, bx, by, bz) {
+    return [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx];
+}
+// Force camera up to align with world up (remove roll)
+function alignUp(a, up = [0, 1, 0]) {
+    // Columns: 0=right, 1=up, 2=forward
+    let fx = a[8], fy = a[9], fz = a[10];
+    let [fnx, fny, fnz] = _normalize3(fx, fy, fz);
+
+    // Compute right = normalize(cross(up, forward))
+    let [rx, ry, rz] = _cross3(up[0], up[1], up[2], fnx, fny, fnz);
+    let rl = Math.hypot(rx, ry, rz);
+    if (rl < 1e-6) {
+        // forward is parallel to up; pick an arbitrary axis to define right
+        const alt = Math.abs(up[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+        [rx, ry, rz] = _cross3(alt[0], alt[1], alt[2], fnx, fny, fnz);
+    }
+    [rx, ry, rz] = _normalize3(rx, ry, rz);
+
+    // up' = normalize(cross(forward, right)) to ensure orthonormal basis
+    let [ux, uy, uz] = _cross3(fnx, fny, fnz, rx, ry, rz);
+    [ux, uy, uz] = _normalize3(ux, uy, uz);
+
+    const out = a.slice();
+    // Set columns
+    out[0] = rx; out[1] = ry; out[2] = rz; // right
+    out[4] = ux; out[5] = uy; out[6] = uz; // up
+    out[8] = fnx; out[9] = fny; out[10] = fnz; // forward (normalized)
+    // translation column unchanged
+    return out;
+}
+
 function createWorker(self) {
     let buffer;
     let vertexCount = 0;
@@ -1008,7 +1075,7 @@ async function main() {
     canvas.addEventListener("mousemove", (e) => {
         e.preventDefault();
         let inv = invert4(viewMatrix);
-        if (down == 1) {
+    if (down == 1) {
             let dx = (5 * (e.clientX - startX)) / innerWidth;
             let dy = (5 * (e.clientY - startY)) / innerHeight;
 			
@@ -1026,11 +1093,17 @@ async function main() {
 			//rotation_matrix = rotate4(rotation_matrix, dy, 1.0, 0.0, 0.0); 
 			//inv = invert4(rotation_matrix)
 			//inv = rotate4(inv, dx, 0, 1, 0); 			
-			inv = translate4(inv, 0, 0, d);
-			inv = rotate4(inv, -dy, 1, 0, 1);
-            inv = rotate4(inv, dx, 0, 1, 0);            
+            inv = translate4(inv, 0, 0, d);
+            // pitch вокруг локальной XZ-плоскости (без изменения крена)
+            inv = rotate4(inv, -dy, 1, 0, 0);
+            // yaw вокруг мировой Y (без накопления крена)
+            {
+                const cam = invert4(inv);
+                const yawed = rotateWorld4(cam, dx, 0, 1, 0);
+                inv = invert4(yawed);
+            }
             inv = translate4(inv, 0, 0, -d);
-            viewMatrix = invert4(inv);
+            viewMatrix = alignUp(invert4(inv));
 
             startX = e.clientX;
             startY = e.clientY;
@@ -1047,7 +1120,7 @@ async function main() {
             startX = e.clientX;
             startY = e.clientY;
 
-        } else if (down == 3) {
+    } else if (down == 3) {
             let dx = (5 * (e.clientX - startX)) / innerWidth;
             let dy = (5 * (e.clientY - startY)) / innerHeight;
 			
@@ -1058,9 +1131,12 @@ async function main() {
 			
 
 			
-            inv = rotate4(inv, dx*0.2, 0, 1, 0);
-            inv = rotate4(inv, -dy*0.2, 1, 0, 0);
-            viewMatrix = invert4(inv);
+            // yaw в мире + pitch локально
+            const cam = invert4(inv);
+            const yawed = rotateWorld4(cam, dx * 0.2, 0, 1, 0);
+            inv = invert4(yawed);
+            inv = rotate4(inv, -dy * 0.2, 1, 0, 0);
+            viewMatrix = alignUp(invert4(inv));
 
             startX = e.clientX;
             startY = e.clientY;
@@ -1107,11 +1183,14 @@ async function main() {
 
                 let d = 4;
                 inv = translate4(inv, 0, 0, d);
-                inv = rotate4(inv, dx, 0, 1, 0);
+                // yaw по мировой Y, pitch локально
+                const cam = invert4(inv);
+                const yawed = rotateWorld4(cam, dx, 0, 1, 0);
+                inv = invert4(yawed);
                 inv = rotate4(inv, -dy, 1, 0, 0);
                 inv = translate4(inv, 0, 0, -d);
 
-                viewMatrix = invert4(inv);
+                viewMatrix = alignUp(invert4(inv));
 
                 startX = e.touches[0].clientX;
                 startY = e.touches[0].clientY;
@@ -1176,6 +1255,10 @@ async function main() {
     let lastFrame = 0;
     let avgFps = 0;
     let start = 0;
+    // Used in progress/UI and streaming loop; must be defined before frame()
+    let bytesRead = 0;
+    let lastVertexCount = -1;
+    let stopLoading = false;
 
     window.addEventListener("gamepadconnected", (e) => {
         const gp = navigator.getGamepads()[e.gamepad.index];
@@ -1192,8 +1275,8 @@ async function main() {
     const frame = (now) => {
         let inv = invert4(viewMatrix);
 
-        if (activeKeys.includes("ArrowLeft")) inv = rotate4(inv, -0.01, 0, 1, 0);
-        if (activeKeys.includes("ArrowRight")) inv = rotate4(inv, 0.01, 0, 1, 0);
+    if (activeKeys.includes("ArrowLeft")) inv = invert4(rotateWorld4(invert4(inv), 0.01, 0, 1, 0));
+    if (activeKeys.includes("ArrowRight")) inv = invert4(rotateWorld4(invert4(inv), -0.01, 0, 1, 0));
         if (activeKeys.includes("ArrowUp")) inv = rotate4(inv, 0.005, 1, 0, 0);
         if (activeKeys.includes("ArrowDown")) inv = rotate4(inv, -0.005, 1, 0, 0);
 
@@ -1202,8 +1285,8 @@ async function main() {
         if (activeKeys.includes("KeyS")) inv = translate4(inv, 0, 0, -0.2);
         if (activeKeys.includes("KeyD")) inv = translate4(inv, 0.2, 0, 0);
 
-        if (activeKeys.includes("KeyQ")) inv = rotate4(inv, 0.008, 0, 0, 1);
-        if (activeKeys.includes("KeyE")) inv = rotate4(inv, -0.008, 0, 0, 1);
+    if (activeKeys.includes("KeyQ")) inv = rotate4(inv, 0.008, 0, 0, 1);
+    if (activeKeys.includes("KeyE")) inv = rotate4(inv, -0.008, 0, 0, 1);
 
         const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
         let isJumping = activeKeys.includes("KeySpace");
@@ -1235,7 +1318,7 @@ async function main() {
 
             // Assuming the right stick controls rotation (axes 2 and 3)
             if (Math.abs(gamepad.axes[2]) > axisThreshold) {
-                inv = rotate4(inv, rotateSpeed * gamepad.axes[2], 0, 1, 0);
+                inv = invert4(rotateWorld4(invert4(inv), rotateSpeed * gamepad.axes[2], 0, 1, 0));
                 carousel = false;
             }
             if (Math.abs(gamepad.axes[3]) > axisThreshold) {
@@ -1274,17 +1357,13 @@ async function main() {
         ) {
             let d = 4;
             inv = translate4(inv, 0, 0, d);
-            inv = rotate4(
-                inv,
-                activeKeys.includes("KeyJ")
-                    ? -0.05
-                    : activeKeys.includes("KeyL")
-                    ? 0.05
-                    : 0,
-                0,
-                1,
-                0,
-            );
+            // yaw вокруг мировой Y
+            const yaw = activeKeys.includes("KeyJ") ? 0.05 : activeKeys.includes("KeyL") ? -0.05 : 0;
+            if (yaw) {
+                const cam = invert4(inv);
+                const yawed = rotateWorld4(cam, yaw, 0, 1, 0);
+                inv = invert4(yawed);
+            }
             inv = rotate4(
                 inv,
                 activeKeys.includes("KeyI")
@@ -1300,16 +1379,17 @@ async function main() {
         }
 
         // inv[13] = preY;
-        viewMatrix = invert4(inv);
+    // Убираем дрейф по крену: фиксируем up-ось камеры после всех вращений
+    viewMatrix = alignUp(invert4(inv));
 
         if (carousel) {
             let inv = invert4(defaultViewMatrix);
 
             const t = Math.sin((Date.now() - start) / 5000);
             inv = translate4(inv, 2.5 * t, 0, 6 * (1 - Math.cos(t)));
-            inv = rotate4(inv, -0.6 * t, 0, 1, 0);
-
-            viewMatrix = invert4(inv);
+            const cam = invert4(inv);
+            const yawed = rotateWorld4(cam, -0.6 * t, 0, 1, 0);
+            viewMatrix = alignUp(yawed);
         }
 
         if (isJumping) {
@@ -1415,10 +1495,6 @@ async function main() {
         e.stopPropagation();
         selectFile(e.dataTransfer.files[0]);
     });
-
-    let bytesRead = 0;
-    let lastVertexCount = -1;
-    let stopLoading = false;
 
     if (reader) {
         while (true) {
