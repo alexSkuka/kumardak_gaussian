@@ -169,6 +169,10 @@ function getProjectionMatrix(fx, fy, width, height) {
 }
 
 function getViewMatrix(camera) {
+    if (!camera || !camera.rotation || !camera.position) {
+        // Fallback to default view if camera data is not ready
+        return defaultViewMatrix;
+    }
     const R = camera.rotation.flat();
     const t = camera.position;
     const camToWorld = [
@@ -731,24 +735,31 @@ async function main() {
         viewMatrix = JSON.parse(decodeURIComponent(location.hash.slice(1)));
         carousel = false;
     } catch (err) {}
-    const url = new URL("splats/model.splat",
-    location.href,
-);
+    const url = new URL(
+        "splats/model.splat",
+        location.href,
+    );
     const req = await fetch(url, {
         mode: "cors", // no-cors, *cors, same-origin
         credentials: "omit", // include, *same-origin, omit
+        cache: "no-store",
     });
     console.log(req);
     if (req.status != 200)
         throw new Error(req.status + " Unable to load " + req.url);
 
     const rowLength = 3 * 4 + 3 * 4 + 4 + 4;
-    const reader = req.body.getReader();
-    let splatData = new Uint8Array(req.headers.get("content-length"));
+    // GitHub Pages часто отдает gzip/chunked: Content-Length может быть для сжатого тела или отсутствовать.
+    // Поэтому не полагаемся на него при выделении буфера и наращиваем буфер по мере чтения.
+    const totalLengthHeader = Number(req.headers.get("content-length") || 0);
+    const totalLength = Number.isFinite(totalLengthHeader) && totalLengthHeader > 0 ? totalLengthHeader : 0;
+    const reader = req.body && req.body.getReader ? req.body.getReader() : null;
+    let capacity = totalLength ? Math.ceil(totalLength / rowLength) * rowLength : 1024 * rowLength;
+    let splatData = new Uint8Array(capacity);
 
-    const downsample =
-        splatData.length / rowLength > 500000 ? 1 : 1 / devicePixelRatio;
-    console.log(splatData.length / rowLength, downsample);
+    const estimatedVerts = totalLength ? totalLength / rowLength : 0;
+    const downsample = estimatedVerts > 500000 ? 1 : 1 / devicePixelRatio;
+    console.log(estimatedVerts || "unknown", downsample);
 
     const worker = new Worker(
         URL.createObjectURL(
@@ -828,11 +839,13 @@ async function main() {
     gl.vertexAttribDivisor(a_index, 1);
 
     const resize = () => {
-        gl.uniform2fv(u_focal, new Float32Array([camera.fx, camera.fy]));
+        const fx = (camera && camera.fx) || 1159.5880733038064;
+        const fy = (camera && camera.fy) || 1164.6601287484507;
+        gl.uniform2fv(u_focal, new Float32Array([fx, fy]));
 
         projectionMatrix = getProjectionMatrix(
-            camera.fx,
-            camera.fy,
+            fx,
+            fy,
             innerWidth,
             innerHeight,
         );
@@ -1326,11 +1339,13 @@ async function main() {
             document.getElementById("spinner").style.display = "";
             start = Date.now() + 2000;
         }
-        const progress = (100 * vertexCount) / (splatData.length / rowLength);
-        if (progress < 100) {
-            document.getElementById("progress").style.width = progress + "%";
-        } else {
-            document.getElementById("progress").style.display = "none";
+        if (totalLength) {
+            const progress = (100 * Math.min(bytesRead, totalLength)) / totalLength;
+            if (progress < 100) {
+                document.getElementById("progress").style.width = progress + "%";
+            } else {
+                document.getElementById("progress").style.display = "none";
+            }
         }
         fps.innerText = Math.round(avgFps) + " fps";
         lastFrame = now;
@@ -1405,26 +1420,56 @@ async function main() {
     let lastVertexCount = -1;
     let stopLoading = false;
 
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done || stopLoading) break;
+    if (reader) {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done || stopLoading) break;
 
-        splatData.set(value, bytesRead);
-        bytesRead += value.length;
+            // Grow buffer if needed; keep capacity aligned to rowLength
+            if (bytesRead + value.length > splatData.length) {
+                let newCapacity = Math.max(
+                    splatData.length * 2,
+                    Math.ceil((bytesRead + value.length) / rowLength) * rowLength,
+                );
+                const next = new Uint8Array(newCapacity);
+                next.set(splatData.subarray(0, bytesRead));
+                splatData = next;
+            }
 
-        if (vertexCount > lastVertexCount) {
+            splatData.set(value, bytesRead);
+            bytesRead += value.length;
+
+            const newVertexCount = Math.floor(bytesRead / rowLength);
+            if (newVertexCount > lastVertexCount) {
+                worker.postMessage({
+                    buffer: splatData.buffer,
+                    vertexCount: newVertexCount,
+                });
+                lastVertexCount = newVertexCount;
+            }
+        }
+        if (!stopLoading) {
+            const finalVertexCount = Math.floor(bytesRead / rowLength);
             worker.postMessage({
                 buffer: splatData.buffer,
-                vertexCount: Math.floor(bytesRead / rowLength),
+                vertexCount: finalVertexCount,
             });
-            lastVertexCount = vertexCount;
         }
-    }
-    if (!stopLoading)
+    } else {
+        // Fallback for environments without ReadableStream
+        const arr = new Uint8Array(await req.arrayBuffer());
+        bytesRead = arr.byteLength;
+        // Ensure splatData has enough capacity and aligned
+        const needed = Math.ceil(bytesRead / rowLength) * rowLength;
+        if (splatData.length < needed) {
+            splatData = new Uint8Array(needed);
+        }
+        splatData.set(arr, 0);
         worker.postMessage({
             buffer: splatData.buffer,
             vertexCount: Math.floor(bytesRead / rowLength),
         });
+    }
 }
 
 main().catch((err) => {
