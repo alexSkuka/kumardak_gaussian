@@ -1,269 +1,654 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr">
-	<head>
-		<title>WebGL Gaussian Splat Viewer</title>
-		<meta charset="utf-8" />
-		<meta
-			name="viewport"
-			content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no"
-		/>
-		<meta name="apple-mobile-web-app-capable" content="yes" />
-		<meta
-			name="apple-mobile-web-app-status-bar-style"
-			content="black-translucent"
-		/>
-		<style>
-			body {
-				overflow: hidden;
-				margin: 0;
-				height: 100vh;
-				width: 100vw;
-				font-family: sans-serif;
-				background: black;
-    			text-shadow: 0 0 3px black;
-			}
-			a, body {
-				color: white;
-			}
-			#info {
-				z-index: 100;
-				position: absolute;
-				top: 10px;
-				left: 15px;
-			}
-			h3 {
-				margin: 5px 0;
-			}
-			p {
-				margin: 5px 0;
-				font-size: small;
-			}
+<html lang="ru">
+    <head>
+        <title>Кумардак — 3D-модель</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+        <base href="">
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                touch-action: none;
+            }
+            body {
+                overflow: hidden;
+                font-family: 'Arial', sans-serif;
+                user-select: none;
+                -webkit-user-select: none;
+                -webkit-touch-callout: none;
+            }
+            .hidden {
+                display: none !important;
+            }
+            #ui {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+            }
+            #ui * {
+                pointer-events: auto;
+            }
+            #infoPanel {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.3);
+            }
+            #infoPanel > #infoPanelContent {
+                position: absolute;
+                top: 40px;
+                left: 50%;
+                transform: translate(-50%, 0);
+                min-height: 280px;
+                min-width: 320px;
+                padding: 8px;
+                border-radius: 24px;
+                color: black;
+                background-color: #eeed;
+                display: flex;
+                flex-direction: column;
+            }
+            #infoPanel > #infoPanelContent > #header {
+                font-size: 24px;
+                font-weight: bold;
+                padding-bottom: 16px;
+                color: #444;
+                display: none;
+            }
+            #infoPanel > #infoPanelContent > #tabs {
+                display: flex;
+                gap: 16px;
+                background-color: #666;
+                padding: 8px;
+                border-radius: 22px;
+            }
+            #infoPanel > #infoPanelContent > #tabs > .tab {
+                padding: 8px;
+                border-radius: 16px;
+                cursor: pointer;
+                flex-grow: 1;
+                text-align: center;
+                font-weight: bold;
+                font-size: 14px;
+                color: #222;
+                transition: background-color 250ms ease;
+            }
+            #infoPanel > #infoPanelContent > #tabs > .tab:hover {
+                background-color: #eee;
+            }
+            #infoPanel > #infoPanelContent > #tabs > .tab.active {
+                background-color: #eee;
+            }
+            #infoPanel > #infoPanelContent > #infoPanels {
+                padding: 16px;
+            }
+            #infoPanel > #infoPanelContent .control-item {
+                display: flex;
+                justify-content: space-between;
+                gap: 32px;
+                line-height: 1.5;
+            }
+            #infoPanel > #infoPanelContent > #infoPanels h1 {
+                font-size: 14px;
+                font-weight: bold;
+                padding: 0 0 6px 0;
+            }
+            #infoPanel > #infoPanelContent .control-item > .control-action {
+                text-align: left;
+                color: #333;
+            }
+            #infoPanel > #infoPanelContent .control-item > .control-key {
+                text-align: right;
+                color: #666;
+            }
+            #infoPanel > #infoPanelContent .control-spacer {
+                border-bottom: 1px dashed #666;
+                margin: 10px 0;
+            }
+            
+            /* loadingWrap */
+            
+            #loadingWrap {
+                position: fixed;
+                bottom: 120px;
+                left: 50%;
+                transform: translate(-50%, 0);
+                width: 380px;
+            
+                display: flex;
+                flex-direction: column;
+            
+                padding: 16px;
+            }
+            #loadingWrap > #loadingText {
+                font-size: 18px;
+                color: white;
+                text-align: center;
+                text-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+            }
+            #loadingWrap > #loadingBar {
+                width: 100%;
+                height: 10px;
+                margin-top: 8px;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+            
+            /* controlsWrap */
+            
+            #controlsWrap {
+                position: absolute;
+                left: max(16px, env(safe-area-inset-left));
+                right: max(16px, env(safe-area-inset-right));
+                bottom: max(16px, env(safe-area-inset-bottom));
+            
+                display: flex;
+                flex-direction: column;
+            }
+            
+            #controlsWrap.faded-in {
+                visibility: visible;
+                opacity: 1;
+                transition: opacity 0.5s ease-out;
+            }
+            #controlsWrap.faded-out {
+                visibility: hidden;
+                opacity: 0;
+                transition: visibility 0s 0.5s, opacity 0.5s ease-out;
+            }
+            
+            #controlsWrap > #timelineContainer {
+                height: 30px;
+                cursor: pointer;
+            }
+            #controlsWrap > #timelineContainer > #line {
+                width: 100%;
+                height: 50%;
+                border-bottom: 1px solid #8888;
+            }
+            #controlsWrap > #timelineContainer > #handle {
+                position: absolute;
+                top: 15.5px;
+                width: 10px;
+                height: 10px;
+                transform: translate(-50%, -50%);
+                border: 1px solid black;
+                border-radius: 50%;
+                background-color: #fff8;
+            }
+            #controlsWrap > #timelineContainer > #time {
+                position: absolute;
+                top: 0;
+                padding: 2px 4px;
+                transform: translate(-50%, -100%);
+                font-size: 12px;
+                color: white;
+                background-color: rgba(0, 0, 0, 0.5);
+                border-radius: 4px;
+            }
+            #controlsWrap > #buttonContainer {
+                display: flex;
+                gap: 8px;
+            }
+            
+            /* spacer */
+            
+            .spacer {
+                flex-grow: 1;
+            }
+            
+            /* settingsPanel */
+            
+            #settingsPanel {
+                position: fixed;
+                right: max(16px, env(safe-area-inset-right));
+                bottom: calc(max(16px, env(safe-area-inset-bottom)) + 70px);
+                padding: 10px;
+                color: #eee;
+                background-color: rgba(0, 0, 0, 0.3);
+                border-radius: 8px;
+            
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+                gap: 4px;
+            
+                font-size: 14px;
+            }
+            #settingsPanel > .settingsRow {
+                display: flex;
+                gap: 4px;
+                width: 100%;
+                
+            }
+            #settingsPanel > .settingsRow > .button {
+                padding: 10px 0px;
+                flex-grow: 1;
+            }
+            
+            /* toggleWrap */
+            
+            .toggleWrap {
+                position: relative;
+                background-color: #dddd;
+                border: 1px solid #888;
+                border-radius: 8px;
+                height: 40px;
+                width: 120px;
+            }
+            .toggleWrap > .toggleHighlight {
+                position: absolute;
+                left: 0;
+                width: 50%;
+                height: 100%;
+                background-color: #eee;
+                border-radius: 8px;
+                transition: left 0.1s ease-out;
+            }
+            .toggleWrap > .toggleHighlight.right {
+                left: 60px;
+            }
+            .toggleWrap > button {
+                position: absolute;
+                width: 60px;
+                height: 100%;
+                border: 0;
+                border-radius: 8px;
+            
+                cursor: pointer;
+                font-size: 14px;
+                letter-spacing: -0.25px;
+            
+                color: #222;
+                background-color: transparent;
+            
+                appearance: none;
+            }
+            .toggleWrap > button:hover {
+                color: black;
+            }
+            .toggleWrap > button.left {
+                left: 0;
+            }
+            .toggleWrap > button.right {
+                right: 0;
+            }
+            
+            /* button */
+            .button {
+                width: 40px;
+                height: 40px;
+                padding: 0;
+                margin: 0;
+                color: #222;
+                background-color: #dddd;
+                border: 1px solid #888;
+                border-radius: 8px;
+                cursor: pointer;
+            
+                /* font-weight: bold; */
+                font-size: 14px;
+                letter-spacing: -0.25px;
+            }
+            .button:hover {
+                background-color: #eee;
+            }
+            .button > svg {
+                display: block;
+                margin: auto;
+            }
+            #poster {
+                display: none;
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-size: cover;
+                background-position: center;
+                background-repeat: no-repeat;
+            }
+            button {
+                color: #222;
+            }
+            button:active {
+                outline: none;
+            }
+            #joystickBase {
+                position: absolute;
+                width: 96px;
+                height: 96px;
+                transform: translate(-50%, -50%);
+                border-radius: 50%;
+                touch-action: none;
+            
+                background: radial-gradient(circle at center, #0000 50%, #000f 100%);
+                background-color: #0002;
+            }
+            
+            #joystickBase > #joystick {
+                position: absolute;
+                width: 48px;
+                height: 48px;
+                transform: translate(-50%, -50%);
+                border-radius: 50%;
+                touch-action: none;
+            
+                background-color: #fff8;
+            }
+        /* Русские подписи и адаптация справки для небольших экранов. */
+:root { color-scheme: light; }
+body { background: #8ac6f8; }
+.toggleWrap { width: 208px; }
+.toggleWrap > button { width: 50%; }
+.toggleWrap > .toggleHighlight.right { left: 50%; }
+#settingsPanel > .settingsRow { gap: 8px; }
+#settingsPanel > .settingsRow > .button { width: auto; min-width: 96px; }
+#infoPanel > #infoPanelContent {
+    box-sizing: border-box;
+    width: min(580px, calc(100% - 24px));
+    min-width: 0;
+    max-height: calc(100dvh - 64px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+}
+#infoPanelContent * { touch-action: pan-y; }
+#infoPanel > #infoPanelContent > #tabs > .tab {
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+}
+#infoPanel > #infoPanelContent > #tabs > .tab.active { background: #eee; }
+#infoPanel > #infoPanelContent .control-item { gap: 16px; }
+#infoPanel .control-action, #infoPanel .control-key { flex: 1; }
+#loadingWrap { box-sizing: border-box; width: min(420px, 100%); }
+#loadError {
+    position: fixed;
+    z-index: 10;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    box-sizing: border-box;
+    width: min(480px, calc(100% - 32px));
+    padding: 24px;
+    border-radius: 16px;
+    color: #222;
+    background: #fff;
+    line-height: 1.5;
+}
+#retryLoad { margin-top: 16px; padding: 10px 16px; cursor: pointer; }
+button:focus-visible { outline: 3px solid #1865bf; outline-offset: 2px; }
+@media (max-width: 400px) {
+    #infoPanel > #infoPanelContent > #infoPanels { padding: 10px; }
+    #infoPanel > #infoPanelContent .control-item { font-size: 13px; gap: 8px; }
+    #infoPanel > #infoPanelContent > #tabs { gap: 4px; padding: 4px; }
+}
 
-			.cube-wrapper {
-				transform-style: preserve-3d;
-			}
+        </style>
+        <script type="module">const url = new URL(location.href);
+const contentUrl = url.searchParams.get('content') || "./assets/scene-light-95e445a027c1.sog";
+// Keep the GPU idle until the user moves the camera or starts the orbit.
+const params = { noanim: !url.searchParams.has('autoplay') };
+for (const name of ['noui', 'noanim', 'ministats']) {
+    if (url.searchParams.has(name)) params[name] = true;
+}
+for (const name of ['poster', 'skybox']) {
+    if (url.searchParams.has(name)) params[name + 'Url'] = url.searchParams.get(name);
+}
+const quality = url.searchParams.get('quality');
+if (quality === 'low' || quality === 'high') {
+    params.quality = quality;
+} else {
+    try {
+        const saved = localStorage.getItem('kumardak.quality');
+        if (saved === 'low' || saved === 'high') params.quality = saved;
+    } catch { /* file:// or restricted storage: use the device default. */ }
+}
+const checkedFetch = async (address) => {
+    const response = await fetch(address);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response;
+};
+window.sse = {
+    poster: params.posterUrl ? Object.assign(new Image(), {src: params.posterUrl}) : null,
+    settings: url.searchParams.has('settings')
+        ? checkedFetch(url.searchParams.get('settings')).then(response => response.json())
+        : {"camera":{"fov":81,"position":[-2.5653767585754395,1.6743189096450806,-2.544935464859009],"target":[-0.11323870620421261,0.4155369414737031,-0.29007896888618856],"startAnim":"none","animTrack":null},"background":{"color":[0,0,0],"skyFallback":{"enabled":true,"zenith":[0.27,0.5,0.84],"horizon":[0.71,0.83,0.96],"upDirection":[-0.04887207303126511,0.9980897219634718,-0.03779454178193455],"sun":{"enabled":true,"direction":[-0.7711037089914542,0.4514870194771259,-0.4489527160217257],"angularDiameterDegrees":3.71,"edgeSoftnessDegrees":0.25,"haloSigmaDegrees":1.5,"haloRadiusDegrees":5,"haloOpacity":0.35},"horizonOffsetDegrees":-8,"lowerHemisphereColor":[0.65,0.73,0.82],"belowHorizonFadeDegrees":20,"blackFadeStartDegrees":-7.999,"blackFadeEndDegrees":-8.0,"elevationStops":[{"elevationDegrees":-35,"color":[0.65,0.73,0.82]},{"elevationDegrees":-8,"color":[0.71,0.83,0.96]},{"elevationDegrees":0,"color":[0.71,0.83,0.96]},{"elevationDegrees":10,"color":[0.46,0.67,0.94]},{"elevationDegrees":35,"color":[0.27,0.5,0.84]},{"elevationDegrees":90,"color":[0.21,0.4,0.74]}]},"atmosphere":{"enabled":true,"startDistance":50,"endDistance":300,"fadeStartDistance":180,"fadeEndDistance":420}},"animTracks":[],"ground":{"enabled":false},"navigationBounds":{"center":[0.09975,-0.01975,-0.0852],"halfExtents":[2.68,0.77,2.73]}},
+    contentUrl,
+    contents: checkedFetch(url.searchParams.has('content') ? contentUrl : "./assets/scene-light-95e445a027c1.sog"),
+    params
+};
+</script>
+        <script type="module" src="./assets/viewer-0d30a745fe52.js"></script>
+        <script type="module">window.kumardakShowError = (message) => {
+    document.documentElement.dataset.viewerState = 'error';
+    document.getElementById('loadingWrap')?.classList.add('hidden');
+    document.getElementById('loadErrorText').textContent = message;
+    document.getElementById('loadError').classList.remove('hidden');
+};
+document.getElementById('retryLoad').addEventListener('click', () => location.reload());
+const showStartupError = () => window.kumardakShowError(
+    'Не удалось открыть 3D-модель. Проверьте поддержку WebGL 2 и аппаратное ускорение в браузере. ' +
+    'Для версии сайта запустите локальный сервер; для открытия двойным щелчком используйте model.html.'
+);
+window.addEventListener('unhandledrejection', showStartupError);
+window.addEventListener('error', event => {
+    if (event.target?.tagName === 'SCRIPT' || event.error) showStartupError();
+}, true);
+window.sse.contents.catch(showStartupError);
+if (window.sse.settings?.catch) window.sse.settings.catch(showStartupError);
+</script>
+    </head>
+    <body>
+        <noscript>Для просмотра 3D-модели включите JavaScript в браузере.</noscript>
+        <div id="loadError" class="hidden" role="alert"><p id="loadErrorText"></p><button id="retryLoad" type="button">Попробовать снова</button></div>
+        <pc-app antialias="false" depth="true" high-resolution="true" stencil="false">
+            <pc-scene>
+                <!-- Camera (with XR support) -->
+                <pc-entity name="camera root">
+                    <pc-entity name="camera">
+                        <pc-camera near-clip="0.001" far-clip="5000" horizontal-fov="true" tonemap="none"></pc-camera>
+                    </pc-entity>
+                    <!-- XR controllers will be added here -->
+                    <pc-scripts>
+                    </pc-scripts>
+                </pc-entity>
+                <!-- Light (for XR controllers) -->
+                <pc-entity name="light" rotation="35 45 0">
+                    <pc-light color="white" intensity="1.5"></pc-light>
+                </pc-entity>
+                <!-- Splat -->
+                <pc-entity name="splat" rotation="0 0 180">
+                </pc-entity>
+            </pc-scene>
+        </pc-app>
 
-			.cube {
-				transform-style: preserve-3d;
-				transform: rotateX(45deg) rotateZ(45deg);
-				animation: rotation 2s infinite;
-			}
+        <div id="ui">
+            <div id="poster"></div>
 
-			.cube-faces {
-				transform-style: preserve-3d;
-				height: 80px;
-				width: 80px;
-				position: relative;
-				transform-origin: 0 0;
-				transform: translateX(0) translateY(0) translateZ(-40px);
-			}
+            <!-- Loading Indicator -->
+            <div id="loadingWrap">
+                <div role="status" aria-live="polite" id="loadingText">Загрузка модели…</div>
+                <div id="loadingBar"></div>
+            </div>
 
-			.cube-face {
-				position: absolute;
-				inset: 0;
-				background: #0017ff;
-				border: solid 1px #ffffff;
-			}
-			.cube-face.top {
-				transform: translateZ(80px);
-			}
-			.cube-face.front {
-				transform-origin: 0 50%;
-				transform: rotateY(-90deg);
-			}
-			.cube-face.back {
-				transform-origin: 0 50%;
-				transform: rotateY(-90deg) translateZ(-80px);
-			}
-			.cube-face.right {
-				transform-origin: 50% 0;
-				transform: rotateX(-90deg) translateY(-80px);
-			}
-			.cube-face.left {
-				transform-origin: 50% 0;
-				transform: rotateX(-90deg) translateY(-80px) translateZ(80px);
-			}
+            <div id="controlsWrap" class="faded-in">
 
-			@keyframes rotation {
-				0% {
-					transform: rotateX(45deg) rotateY(0) rotateZ(45deg);
-					animation-timing-function: cubic-bezier(
-						0.17,
-						0.84,
-						0.44,
-						1
-					);
-				}
-				50% {
-					transform: rotateX(45deg) rotateY(0) rotateZ(225deg);
-					animation-timing-function: cubic-bezier(
-						0.76,
-						0.05,
-						0.86,
-						0.06
-					);
-				}
-				100% {
-					transform: rotateX(45deg) rotateY(0) rotateZ(405deg);
-					animation-timing-function: cubic-bezier(
-						0.17,
-						0.84,
-						0.44,
-						1
-					);
-				}
-			}
+                <!-- Timeline Panel -->
+                <div id="timelineContainer" class="hidden">
+                    <div id="line"></div>
+                    <div id="handle"></div>
+                    <div id="time" class="hidden">0:00</div>
+                </div>
 
-			.scene,
-			#message {
-				position: absolute;
-				display: flex;
-				top: 0;
-				right: 0;
-				left: 0;
-				bottom: 0;
-				z-index: 2;
-				height: 100%;
-				width: 100%;
-				align-items: center;
-				justify-content: center;
-			}
-			#message {
-				font-weight: bold;
-				font-size: large;
-				color: red;
-				pointer-events: none;
-			}
+                <!-- Buttons Panel -->
+                <div id="buttonContainer">
+                    <button title="Воспроизвести облёт" aria-label="Воспроизвести облёт" id="play" class="button hidden">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="4 4 16 16" fill="currentColor"><path d="M15 12.3301L9 16.6603L9 8L15 12.3301Z"/></svg>
+                    </button>
+                    <button title="Приостановить облёт" aria-label="Приостановить облёт" id="pause" class="button hidden">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 20 20" fill="currentColor"><path d="M5 16V4h3v12H5zm7-12h3v12h-3V4z"/></svg>
+                    </button>
+                    <div class="spacer"></div>
+                    <button title="Дополненная реальность" aria-label="Дополненная реальность" id="arMode" class="button hidden">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M440-181 240-296q-19-11-29.5-29T200-365v-230q0-22 10.5-40t29.5-29l200-115q19-11 40-11t40 11l200 115q19 11 29.5 29t10.5 40v230q0 22-10.5 40T720-296L520-181q-19 11-40 11t-40-11Zm0-92v-184l-160-93v185l160 92Zm80 0 160-92v-185l-160 93v184ZM80-680v-120q0-33 23.5-56.5T160-880h120v80H160v120H80ZM280-80H160q-33 0-56.5-23.5T80-160v-120h80v120h120v80Zm400 0v-80h120v-120h80v120q0 33-23.5 56.5T800-80H680Zm120-600v-120H680v-80h120q33 0 56.5 23.5T880-800v120h-80ZM480-526l158-93-158-91-158 91 158 93Zm0 45Zm0-45Zm40 69Zm-80 0Z"/></svg>
+                    </button>
+                    <button title="Виртуальная реальность" aria-label="Виртуальная реальность" id="vrMode" class="button hidden">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M300-240q-66 0-113-47t-47-113v-163q0-51 32-89.5t82-47.5q57-11 113-15.5t113-4.5q57 0 113.5 4.5T706-700q50 10 82 48t32 89v163q0 66-47 113t-113 47h-40q-13 0-26-1.5t-25-6.5l-64-22q-12-5-25-5t-25 5l-64 22q-12 5-25 6.5t-26 1.5h-40Zm0-80h40q7 0 13.5-1t12.5-3q29-9 56.5-19t57.5-10q30 0 58 9.5t56 19.5q6 2 12.5 3t13.5 1h40q33 0 56.5-23.5T740-400v-163q0-22-14-38t-35-21q-52-11-104.5-14.5T480-640q-54 0-106 4t-105 14q-21 4-35 20.5T220-563v163q0 33 23.5 56.5T300-320ZM40-400v-160h60v160H40Zm820 0v-160h60v160h-60Zm-380-80Z"/></svg>
+                    </button>
+                    <button title="Управление и справка" aria-label="Управление и справка" id="info" class="button">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M440-280h80v-240h-80v240Zm40-320q17 0 28.5-11.5T520-640q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640q0 17 11.5 28.5T480-600Zm0 520q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>
+                    </button>
+                    <button title="Настройки камеры и качества" aria-label="Настройки камеры и качества" id="orbitSettings" class="button">
+                        <!-- <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h480q33 0 56.5 23.5T720-720v180l160-160v440L720-420v180q0 33-23.5 56.5T640-160H160Zm0-80h480v-480H160v480Zm0 0v-480 480Z"/></svg> -->
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="2 2 20 20" width="24" fill="currentColor">
+                        <path d="m 7.1442743,11.663766 q -0.9582938,0 -1.8114091,-0.368125 Q 4.47975,10.927516 3.8428352,10.290601 3.2059204,9.6536865 2.8377954,8.8005713 2.4696703,7.947456 2.4696703,6.9891622 q 0,-0.9699803 0.3681251,-1.8172523 0.368125,-0.847272 1.0050398,-1.4841868 0.6369148,-0.6369148 1.49003,-1.0050398 0.8531153,-0.3681251 1.8114091,-0.3681251 0.9699803,0 1.8172523,0.3681251 0.847272,0.368125 1.4841864,1.0050398 0.636915,0.6369148 1.00504,1.4841868 0.368125,0.847272 0.368125,1.8172523 0,0.9582938 -0.368125,1.8114091 -0.368125,0.8531152 -1.00504,1.4900297 -0.6369144,0.636915 -1.4841864,1.00504 -0.847272,0.368125 -1.8172523,0.368125 z m 0,-0.958294 Q 7.4481236,10.284758 7.6701673,9.8289841 7.8922109,9.3732102 8.0324491,8.8590038 H 6.2560995 Q 6.3963377,9.3732102 6.6183814,9.8289841 6.840425,10.284758 7.1442743,10.705472 Z M 5.9288773,10.518488 Q 5.7185201,10.132833 5.5607522,9.7179623 5.4029843,9.3030912 5.2978057,8.8590038 H 3.9187975 q 0.3389088,0.5843255 0.847272,1.0167264 0.5083632,0.4324008 1.1628078,0.6427578 z m 2.430794,0 Q 9.0141159,10.308131 9.5224791,9.8757302 10.030842,9.4433293 10.369751,8.8590038 H 8.9907429 Q 8.8855643,9.3030912 8.7277964,9.7179623 8.5700285,10.132833 8.3596713,10.518488 Z M 3.5214562,7.924083 h 1.5893654 q -0.03506,-0.2337302 -0.052589,-0.4616171 -0.01753,-0.227887 -0.01753,-0.4733037 0,-0.2454167 0.01753,-0.4733037 0.01753,-0.2278869 0.052589,-0.4616171 H 3.5214562 q -0.058432,0.2337302 -0.087649,0.4616171 -0.029216,0.227887 -0.029216,0.4733037 0,0.2454167 0.029216,0.4733037 0.029216,0.2278869 0.087649,0.4616171 z m 2.5242862,0 h 2.1970638 q 0.03506,-0.2337302 0.052589,-0.4616171 0.01753,-0.227887 0.01753,-0.4733037 0,-0.2454167 -0.01753,-0.4733037 -0.01753,-0.2278869 -0.052589,-0.4616171 H 6.0457424 q -0.03506,0.2337302 -0.052589,0.4616171 -0.01753,0.227887 -0.01753,0.4733037 0,0.2454167 0.01753,0.4733037 0.01753,0.2278869 0.052589,0.4616171 z m 3.1319846,0 h 1.589365 q 0.05843,-0.2337302 0.08765,-0.4616171 0.02922,-0.227887 0.02922,-0.4733037 0,-0.2454167 -0.02922,-0.4733037 -0.02922,-0.2278869 -0.08765,-0.4616171 H 9.177727 q 0.03506,0.2337302 0.052589,0.4616171 0.01753,0.227887 0.01753,0.4733037 0,0.2454167 -0.01753,0.4733037 Q 9.212786,7.6903528 9.177727,7.924083 Z M 8.9907429,5.1193206 H 10.369751 Q 10.030842,4.5349951 9.5224791,4.1025942 9.0141159,3.6701934 8.3596713,3.4598362 8.5700285,3.845491 8.7277964,4.2603621 8.8855643,4.6752332 8.9907429,5.1193206 Z m -2.7346434,0 H 8.0324491 Q 7.8922109,4.6051142 7.6701673,4.1493403 7.4481236,3.6935664 7.1442743,3.272852 6.840425,3.6935664 6.6183814,4.1493403 6.3963377,4.6051142 6.2560995,5.1193206 Z m -2.337302,0 H 5.2978057 Q 5.4029843,4.6752332 5.5607522,4.2603621 5.7185201,3.845491 5.9288773,3.4598362 5.2744327,3.6701934 4.7660695,4.1025942 4.2577063,4.5349951 3.9187975,5.1193206 Z"/>
+                        <path d="m 15.71996,21.990604 -4.663443,-4.853407 a 1.3461538,1.5192307 46.143522 0 1 0.162796,-2.023287 l 1.095483,-1.052606 -4.0563428,0.163849 6.5728988,-6.3156334 -0.32559,4.0465734 1.095484,-1.052605 a 1.3461538,1.5192307 46.143522 0 1 2.028171,-0.08193 l 4.663442,4.85341 a 1.3461538,1.5192307 46.143522 0 1 -0.162794,2.023289 L 17.748132,21.90868 A 1.3461538,1.5192307 46.143522 0 1 15.71996,21.9906 Z m 1.095484,-1.052606 4.381933,-4.210422 -4.663442,-4.853407 -4.381934,4.210422 z"/>
+                        </svg>
+                    </button>
+                    <button title="Настройки камеры и качества" aria-label="Настройки камеры и качества" id="flySettings" class="button hidden">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="2 2 20 20" width="24" fill="currentColor">
+                        <path d="M 9.8906998,16.233103 5.1313273,11.47373 a 1.3461538,1.5192307 45 0 1 0.122383,-2.0261336 l 1.0742595,-1.074259 -4.0522666,0.244769 6.4455506,-6.445549 -0.244768,4.052264 1.074259,-1.074259 a 1.3461538,1.5192307 45 0 1 2.0261302,-0.122383 l 4.759374,4.7593716 a 1.3461538,1.5192307 45 0 1 -0.122384,2.026135 l -4.297034,4.297033 A 1.3461538,1.5192307 45 0 1 9.8906998,16.233103 Z M 10.964957,15.158844 15.261991,10.861811 10.502618,6.1024374 6.2055848,10.399472 Z"/>
+                        <path d="m 14.224293,15.714388 c 3.299831,3.005202 5.165738,4.544311 5.165738,4.544311 l -3.240906,1.355289 -3.633673,-5.8996 z"/>
+                        <path d="m 15.993848,12.784194 2.558715,1.345379 1.867746,2.763273 2.180246,-2.121321 -4.83894,-2.694438 z"/>
+                        <path d="m 14.340359,14.30196 3.720169,3.629993 1.885618,-0.942809 -4.014797,-2.687184 z"/>
+                        </svg>
+                    </button>
+                    <button title="На весь экран" aria-label="На весь экран" id="enterFullscreen" class="button">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M120-120v-200h80v120h120v80H120Zm520 0v-80h120v-120h80v200H640ZM120-640v-200h200v80H200v120h-80Zm640 0v-120H640v-80h200v200h-80Z"/></svg>
+                    </button>
+                    <button title="Выйти из полноэкранного режима" aria-label="Выйти из полноэкранного режима" id="exitFullscreen" class="button hidden">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M240-120v-120H120v-80h200v200h-80Zm400 0v-200h200v80H720v120h-80ZM120-640v-80h120v-120h80v200H120Zm520 0v-200h80v120h120v80H640Z"/></svg>
+                    </button>
+                </div>
+            </div>
 
-			details {
-				font-size: small;
+            <!-- Settings Panel -->
+            <div id="settingsPanel" class="hidden">
+                <div>Режим камеры</div>
+                <div id="cameraToggle" class="toggleWrap">
+                    <div id="cameraToggleHighlight" class="toggleHighlight"></div>
+                    <button title="Облёт вокруг модели" aria-label="Облёт вокруг модели" id="orbit" class="left">Облёт</button>
+                    <button title="Свободный полёт" aria-label="Свободный полёт" id="fly" class="right">Полёт</button>
+                </div>
+                <div>Качество</div>
+                <div id="qualityToggle" class="toggleWrap">
+                    <div id="qualityToggleHighlight" class="toggleHighlight"></div>
+                    <button title="Экономный режим: меньше нагрузка на видеокарту" aria-label="Экономный режим: меньше нагрузка на видеокарту" id="low" class="left">Эконом</button>
+                    <button title="Высокое качество: полное разрешение экрана" aria-label="Высокое качество: полное разрешение экрана" id="high" class="right">Высокое</button>
+                </div>
+                <div>Вид</div>
+                <div class="settingsRow">
+                    <button title="Показать всю сцену (F / А)" aria-label="Показать всю сцену (F / А)" id="frame" class="button">Вся сцена</button>
+                    <button title="Исходный вид (R / К)" aria-label="Исходный вид (R / К)" id="reset" class="button">Сброс</button>
+                </div>
+            </div>
 
-			}
+            <!-- Info Panel -->
+            <div id="infoPanel" class="hidden">
+                <div id="infoPanelContent" onpointerdown="event.stopPropagation()">
+                    <div id="header">Управление</div>
+                    <div id="tabs">
+                        <button type="button" id="desktopTab" class="tab active">Компьютер</button>
+                        <button type="button" id="touchTab" class="tab">Сенсорный экран</button>
+                    </div>
+                    <div id="infoPanels">
+                        <div id="desktopInfoPanel">
+                            <div class="control-spacer"></div>
+                            <h1>Режим облёта</h1>
+                            <div class="control-item">
+                                <span class="control-action">Облёт</span>
+                                <span class="control-key">Левая кнопка мыши</span>
+                            </div>
+                            <div class="control-item">
+                                <span class="control-action">Сдвиг</span>
+                                <span class="control-key">Правая кнопка мыши</span>
+                            </div>
+                            <div class="control-item">
+                                <span class="control-action">Приближение</span>
+                                <span class="control-key">Колесо мыши</span>
+                            </div>
+                            <div class="control-item">
+                                <span class="control-action">Выбрать центр</span>
+                                <span class="control-key">Двойной щелчок</span>
+                            </div>
+                            <div class="control-spacer"></div>
+                            <h1>Режим полёта</h1>
+                            <div class="control-item">
+                                <span class="control-action">Осмотр</span>
+                                <span class="control-key">Левая кнопка мыши</span>
+                            </div>
+                            <div class="control-item">
+                                <span class="control-action">Полёт</span>
+                                <span class="control-key">W, S, A, D (Ц, Ы, Ф, В)</span>
+                            </div>
+                            <div class="control-spacer"></div>
+                            <div class="control-item">
+                                <span class="control-action">Показать всю сцену</span>
+                                <span class="control-key">F</span>
+                            </div>
+                            <div class="control-item">
+                                <span class="control-action">Сбросить камеру</span>
+                                <span class="control-key">R</span>
+                            </div>
+                        </div>
+                        <div id="touchInfoPanel" class="hidden">
+                            <div class="control-spacer"></div>
+                            <h1>Режим облёта</h1>
+                            <div class="control-item">
+                                <span class="control-action">Облёт</span>
+                                <span class="control-key">Движение одним пальцем</span>
+                            </div>
+                            <div class="control-item">
+                                <span class="control-action">Сдвиг</span>
+                                <span class="control-key">Движение двумя пальцами</span>
+                            </div>
+                            <div class="control-item">
+                                <span class="control-action">Приближение</span>
+                                <span class="control-key">Сведение / разведение пальцев</span>
+                            </div>
+                            <div class="control-item">
+                                <span class="control-action">Выбрать центр</span>
+                                <span class="control-key">Двойное касание</span>
+                            </div>
+                            <div class="control-spacer"></div>
+                            <h1>Режим полёта</h1>
+                            <div class="control-item">
+                                <span class="control-action">Осмотр</span>
+                                <span class="control-key">Касание справа</span>
+                            </div>
+                            <div class="control-item">
+                                <span class="control-action">Полёт</span>
+                                <span class="control-key">Касание слева</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-			#progress {
-				position: absolute;
-				top: 0;
-				height: 5px;
-				background: blue;
-				z-index: 99;
-				transition: width 0.1s ease-in-out;
-			}
-
-			#quality {
-				position: absolute;
-				bottom: 10px;
-				z-index: 999;
-				right: 10px;
-			}
-
-			#canvas {
-				display: block;
-				position: absolute;
-				top: 0;
-				left: 0;
-				width: 100%;
-				height: 100%;
-				touch-action: none;
-			}
-
-			#instructions {
-				background: rgba(0,0,0,0.6);
-				white-space: pre-wrap;
-				padding: 10px;
-				border-radius: 10px;
-				font-size: small;
-			}
-			
-			#collections {
-				background: rgba(0,0,0,0.6);
-				white-space: pre-wrap;
-				padding: 10px;
-				border-radius: 10px;
-				font-size: x-small;
-			}
-
-			body.nohf .nohf {
-				display: none;
-			}
-			body.nohf #progress, body.nohf .cube-face {
-				background: #ff9d0d;
-			}
-		</style>
-	</head>
-	<body>
-		<script>
-			if(location.host.includes('hf.space')) document.body.classList.add('nohf');
-		</script>
-		<div id="info">
-			<h3 class="nohf">WebGL 3D Gaussian Splat Viewer</h3>
-			<p>
-			<small class="nohf">
-				By Ilya Prok</a>.
-			</small>
-		</p>
-
-			<details>
-			<summary>Для навигации используйте мышь или клавиши со стрелками.</summary>
-
-<div id="instructions">Основная навигация (мышь+QE)
-- щелкните левой кнопкой мыши и перетащите на орбиту
-- щелкните средней кнопкой мыши и перетащите вверх/вниз для перемещения
-- q/e для коррекции орбиты 
-
-движение (подобно WASD-шутер)
-- клавиши a/d для перемещения из стороны в сторону
-- с клавишами для перемещения вперед/назад
-- щелкните правой кнопкой мыши и перетащите, чтобы осмотреться
-
-угол камеры (клавиша со стрелкой)
-- влево/вправо, чтобы повернуть камеру влево/вправо
-- вверх/вниз, чтобы наклонить камеру вверх/вниз
-- q/e, чтобы повернуть камеру против часовой стрелки/по часовой стрелке
-- i/k и j/l на орбиту
-
-трекпад
-- прокрутите вверх/вниз/влево/вправо на орбиту
-- ущипните, чтобы двигаться вперед/назад
-- клавиша Ctrl + прокрутка для перемещения вперед/назад
-- Shift + прокрутка для перемещения вверх/вниз или стрейфа
-
-сенсорный (мобильный)
-- один палец на орбите
-- Два пальца для перемещения вперед/назад
-- поворот двумя пальцами для поворота камеры по часовой стрелке/против часовой стрелки
-- Панорамирование двумя пальцами для перемещения из стороны в сторону и вверх-вниз
-
-геймпад
-- если у вас подключен игровой контроллер, он должен работать
-
-другой
-- нажмите 0-9, чтобы переключиться на один из предварительно загруженных видов камеры.
-- нажмите p, чтобы возобновить анимацию по умолчанию
-</div>
-		</div>
-
-		<div id="progress"></div>
-
-		<div id="message"></div>
-		<div class="scene" id="spinner">
-			<div class="cube-wrapper">
-				<div class="cube">
-					<div class="cube-faces">
-						<div class="cube-face bottom"></div>
-						<div class="cube-face top"></div>
-						<div class="cube-face left"></div>
-						<div class="cube-face right"></div>
-						<div class="cube-face back"></div>
-						<div class="cube-face front"></div>
-					</div>
-				</div>
-			</div>
-		</div>
-		<canvas id="canvas"></canvas>
-
-		<div id="quality">
-			<span id="fps"></span>
-		</div>
-		<script src="main.js"></script>
-	</body>
+            <!-- Touch Joystick -->
+            <div id="joystickBase" class="hidden">
+                <div id="joystick"></div>
+            </div>
+        </div>
+        <script type="module">
+            // Load the poster image if available
+            const poster = window.sse?.poster;
+            if (poster) {
+                const element = document.getElementById('poster');
+                element.style.backgroundImage = `url(${poster.src})`;
+                element.style.display = 'block';
+                element.style.filter = 'blur(40px)';
+            }
+        </script>
+    </body>
 </html>
+
+<!-- Terrain: produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. -->
